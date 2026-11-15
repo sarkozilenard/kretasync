@@ -137,7 +137,9 @@ const routes: Record<string, Handler> = {
   },
 
   'GET /api/calendar-ics': async (req, sql) => {
-    const raw = new URL(req.url).searchParams.get('token') || '';
+    // A Vercel rewrite után a függvény az eredeti (/calendar/TOKEN.ics) vagy az átírt (?token=) címet is kaphatja – mindkettőt kezeljük.
+    const u = new URL(req.url);
+    const raw = u.searchParams.get('token') || u.pathname.match(/^\/calendar\/([^/]+)$/)?.[1] || '';
     const m = raw.match(/^([A-Za-z0-9_-]{20,100})\.ics$/);
     const miss = async () => { await rateLimit(sql, `ics-miss:${clientIp(req)}`, 30, 900); return new Response('Not found', { status: 404 }); };
     if (!m) return miss();
@@ -267,7 +269,8 @@ const routes: Record<string, Handler> = {
 export function createApp(deps: AppDeps = {}) {
   return async function handle(req: Request): Promise<Response> {
     try {
-      const path = new URL(req.url).pathname.replace(/\/+$/, '') || '/';
+      let path = new URL(req.url).pathname.replace(/\/+$/, '') || '/';
+      if (/^\/calendar\/[^/]+$/.test(path)) path = '/api/calendar-ics';
       const handler = routes[`${req.method} ${path}`];
       if (!handler) {
         if (path.startsWith('/api/')) throw new HttpError(404, 'Ismeretlen végpont.');
