@@ -39,6 +39,8 @@ A `npm run dev` saját kis szervere a `public/` fájlokat és az API-t szolgálj
 
 > `ENCRYPTION_KEY` elvesztése/cseréje után az összes mentett KRÉTA-kapcsolat érvénytelen; a felhasználóknak újra kell csatlakozniuk.
 
+Az API-kéréseket a Vercel egyetlen `api/index.ts` függvényhez irányítja; az eredeti végpontot a rewrite `__route` paraméterként adja át.
+
 ## E-mail (opcionális)
 
 Jelszó-visszaállítás és e-mail-megerősítés csak akkor működik, ha `RESEND_API_KEY` és `EMAIL_FROM` be van állítva ([resend.com](https://resend.com), ellenőrzött küldő-domain kell). Beállításig a felület kikapcsolva mutatja ezeket (`GET /api/config`), és az API 503-at ad.

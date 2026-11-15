@@ -102,7 +102,7 @@ describe('naptár és szinkron', () => {
   });
 
   it('KRÉTA-kapcsolat: jelszó nem kerül tárolásra, refresh token titkosítva', async () => {
-    expect((await call('POST', '/api/kreta/connect', { username: 'diak', password: 'rossz', instituteCode: 'klik011111111' }, a.cookie)).status).toBe(401);
+    expect((await call('POST', '/api?__route=kreta/connect', { username: 'diak', password: 'rossz', instituteCode: 'klik011111111' }, a.cookie)).status).toBe(401);
     expect((await call('POST', '/api/kreta/connect', { username: 'diak', password: 'x', instituteCode: 'evil.com/x' }, a.cookie)).status).toBe(401);
     kreta.lessons = [lesson('L1', 'Matematika', 1), lesson('L2', 'Történelem', 1, { start_date: soonD(1, '09:00'), end_date: soonD(1, '09:45'), lesson_index: 2 }), lesson('L3', 'Fizika', 2)];
     const r = await call('POST', '/api/kreta/connect', { username: 'diak', password: 'Sz3cr3t-kreta', instituteCode: 'klik011111111' }, a.cookie);

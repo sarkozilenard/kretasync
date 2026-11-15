@@ -1,8 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "functions": { "api/**/*.ts": { "maxDuration": 60 } },
+  "functions": { "api/index.ts": { "maxDuration": 60 } },
   "rewrites": [
-    { "source": "/calendar/:token", "destination": "/api/calendar-ics?token=:token" }
+    { "source": "/calendar/:token", "destination": "/api?__route=calendar-ics&token=:token" },
+    { "source": "/api/:path*", "destination": "/api?__route=:path*" }
   ],
   "crons": [{ "path": "/api/cron/sync", "schedule": "0 5 * * *" }],
   "headers": [

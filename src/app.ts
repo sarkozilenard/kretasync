@@ -269,7 +269,12 @@ const routes: Record<string, Handler> = {
 export function createApp(deps: AppDeps = {}) {
   return async function handle(req: Request): Promise<Response> {
     try {
-      let path = new URL(req.url).pathname.replace(/\/+$/, '') || '/';
+      const url = new URL(req.url);
+      let path = url.pathname.replace(/\/+$/, '') || '/';
+      if (path === '/api') {
+        const forwardedPath = url.searchParams.get('__route');
+        if (forwardedPath) path = `/api/${forwardedPath.replace(/^\/+/, '')}`;
+      }
       if (/^\/calendar\/[^/]+$/.test(path)) path = '/api/calendar-ics';
       const handler = routes[`${req.method} ${path}`];
       if (!handler) {
