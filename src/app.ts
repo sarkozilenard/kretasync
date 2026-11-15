@@ -236,7 +236,7 @@ const routes: Record<string, Handler> = {
     }
     // A régi klienshez hasonlóan a mentett refresh token az elsődleges; csak ha nem használható, kérünk jelszót.
     if (!tokens) {
-      await rateLimit(sql, `kreta-connect:${u.id}`, 5, 3600);
+      await rateLimit(sql, `kreta-connect-v2:${u.id}`, 5, 3600);
       tokens = await kreta.login(username, password, institute);
     }
     await sql`
