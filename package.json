@@ -1,0 +1,23 @@
+{
+  "name": "kretasync",
+  "version": "1.0.0",
+  "private": true,
+  "description": "KrétaSync – KRÉTA-órarend szinkronizálása ICS-naptárba (Vercel + Postgres)",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "dev": "tsx scripts/dev.ts",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "echo \"nincs build lépés – a Vercel az api/ mappát fordítja\""
+  },
+  "dependencies": {
+    "postgres": "^3.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  }
+}
