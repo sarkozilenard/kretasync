@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
-import { convertLessons, createKretaClient, KretaAuthError } from '../src/kreta/client';
+import { describe, expect, it, vi } from 'vitest';
+import { convertLessons, createKretaClient, KretaAuthError, KretaError } from '../src/kreta/client';
 
 /** Szimulált idp.e-kreta.hu + intézményi API: a kreta.py által követett lépéssorrendet ellenőrzi (valódi KRÉTA nélkül). */
 function fakeKretaFetch() {
@@ -76,6 +76,25 @@ describe('KRÉTA-kliens (szimulált IdP)', () => {
     const k = createKretaClient(fakeKretaFetch().fn);
     await expect(k.login('diak', 'rossz', 'klik011111111')).rejects.toBeInstanceOf(KretaAuthError);
     await expect(k.refresh('RT-regi', 'klik011111111')).rejects.toBeInstanceOf(KretaAuthError);
+  });
+
+  it('naplózza a hálózati hiba végpontját és kódját, de nem a kérés adatait', async () => {
+    const cause = Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' });
+    const fetchImpl = vi.fn(async () => { throw new TypeError('fetch failed', { cause }); }) as unknown as typeof fetch;
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await expect(createKretaClient(fetchImpl).login('private-user', 'private-password', 'klik011111111'))
+        .rejects.toBeInstanceOf(KretaError);
+      expect(log).toHaveBeenCalledWith('KRÉTA request failed', {
+        host: 'idp.e-kreta.hu',
+        path: '/Account/Login',
+        errorName: 'TypeError',
+        causeCode: 'ECONNRESET',
+      });
+      expect(JSON.stringify(log.mock.calls)).not.toContain('private-password');
+    } finally {
+      log.mockRestore();
+    }
   });
 
   it('az intézménykód nem tud idegen hostra mutatni (SSRF-védelem)', async () => {

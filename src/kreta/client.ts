@@ -62,7 +62,18 @@ export function createKretaClient(fetchImpl: FetchFn = fetch): KretaApi {
     let res: Response;
     try {
       res = await fetchImpl(url, { ...init, headers, redirect: 'manual', signal: AbortSignal.timeout(20_000) });
-    } catch {
+    } catch (error) {
+      const cause = error instanceof Error ? error.cause : undefined;
+      const causeCode = typeof cause === 'object' && cause !== null && 'code' in cause && typeof cause.code === 'string'
+        ? cause.code
+        : undefined;
+      const endpoint = new URL(url);
+      console.error('KRÉTA request failed', {
+        host: endpoint.host,
+        path: endpoint.pathname,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+        causeCode,
+      });
       throw new KretaError('A KRÉTA jelenleg nem érhető el. Kérjük, próbáld újra később.'); // hálózati hiba/időtúllépés
     }
     init.jar?.store(res);
