@@ -216,7 +216,6 @@ const routes: Record<string, Handler> = {
 
   'POST /api/kreta/connect': async (req, sql, deps) => {
     const u = await requireUser(sql, req);
-    await rateLimit(sql, `kreta-connect:${u.id}`, 5, 3600);
     const b = await readJson(req);
     const username = str(b.username, 'KRÉTA-felhasználónév', 100);
     const password = str(b.password, 'KRÉTA-jelszó', 200);
@@ -236,7 +235,10 @@ const routes: Record<string, Handler> = {
       }
     }
     // A régi klienshez hasonlóan a mentett refresh token az elsődleges; csak ha nem használható, kérünk jelszót.
-    if (!tokens) tokens = await kreta.login(username, password, institute);
+    if (!tokens) {
+      await rateLimit(sql, `kreta-connect:${u.id}`, 5, 3600);
+      tokens = await kreta.login(username, password, institute);
+    }
     await sql`
       insert into kreta_connections (user_id, institute_code, refresh_token_enc, connection_status, last_error)
       values (${u.id}, ${institute}, ${encrypt(tokens.refresh_token)}, 'connected', null)

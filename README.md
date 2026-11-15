@@ -62,7 +62,7 @@ Jelszó-visszaállítás és e-mail-megerősítés csak akkor működik, ha `RES
 
 - Jelszó: scrypt (N=2¹⁵, r=8, p=1), egyedi só. Munkamenet-, naptár-, visszaállító és megerősítő tokenek: csak SHA-256 hash az adatbázisban.
 - Cookie: `HttpOnly; SameSite=Lax; Secure` (HTTPS-en). CSRF: kötelező `X-Requested-With` fejléc + Origin-ellenőrzés minden módosító kérésnél.
-- Rate limit (Postgres-alapú): regisztráció, belépés (IP + e-mail), jelszó-visszaállítás, KRÉTA-csatlakozás, szinkron, hibás ICS-token.
+- Rate limit (Postgres-alapú): regisztráció, belépés (IP + e-mail), jelszó-visszaállítás, KRÉTA-jelszavas belépés, szinkron, hibás ICS-token.
 - Paraméterezett SQL; minden adat `user_id`-hoz kötött; az intézménykód szigorúan validált (nem lehet idegen hostra irányítani).
 - Jelszó-visszaállítás után minden munkamenet megszűnik; a válasz nem árulja el, létezik-e az e-mail.
 - A naplókba nem kerül jelszó vagy token.
