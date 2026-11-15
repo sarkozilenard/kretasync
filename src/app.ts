@@ -1,6 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
 import { ConfigError, db, Sql } from './db';
-import { encrypt, hashPassword, randomToken, sha256, verifyPassword } from './crypto';
+import { decrypt, encrypt, hashPassword, randomToken, sha256, verifyPassword } from './crypto';
 import { assertCsrf, clientIp, HttpError, json, parseCookies, readJson, sessionCookie } from './http';
 import { rateLimit } from './ratelimit';
 import { email as vEmail, newPassword, str } from './validate';
@@ -224,8 +224,19 @@ const routes: Record<string, Handler> = {
     assertInstituteCode(institute);
     encrypt('config-check'); // hiányzó ENCRYPTION_KEY esetén még a belépés előtt érthető hibát adunk
     const kreta = deps.kreta ?? createKretaClient();
-    // A jelszót csak a belépéshez használjuk; csak a titkosított refresh token kerül mentésre.
-    const tokens = await kreta.login(username, password, institute);
+    const [existing] = await sql`
+      select institute_code, refresh_token_enc from kreta_connections where user_id = ${u.id}`;
+    let tokens;
+    if (existing?.institute_code === institute) {
+      try {
+        tokens = await kreta.refresh(decrypt(existing.refresh_token_enc), institute);
+      } catch (e) {
+        if (!(e instanceof KretaAuthError || e instanceof KretaError)) throw e;
+        console.error('KRÉTA saved-token login failed', { errorType: e.constructor.name });
+      }
+    }
+    // A régi klienshez hasonlóan a mentett refresh token az elsődleges; csak ha nem használható, kérünk jelszót.
+    if (!tokens) tokens = await kreta.login(username, password, institute);
     await sql`
       insert into kreta_connections (user_id, institute_code, refresh_token_enc, connection_status, last_error)
       values (${u.id}, ${institute}, ${encrypt(tokens.refresh_token)}, 'connected', null)

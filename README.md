@@ -69,6 +69,8 @@ Jelszó-visszaállítás és e-mail-megerősítés csak akkor működik, ha `RES
 
 ## Szinkron működése
 
+KRÉTA-kapcsolódáskor az alkalmazás először – a régi klienshez hasonlóan – megpróbálja frissíteni a felhasználó meglévő, titkosítva tárolt refresh tokenjét. Ha az nem használható, a megadott KRÉTA-belépési adatokkal újra bejelentkezik.
+
 Csatlakozáskor és minden szinkronnál az elkövetkező `SYNC_DAYS` (14) nap órarendje töltődik le. Az órák a KRÉTA egyedi azonosítója (`Uid`) szerint upsertelődnek (módosult óra = ugyanaz az ICS-UID, nincs duplikáció); ami az ablakból eltűnt vagy `Elmaradt` státuszú, törlődik. Hiba esetén semmi nem törlődik, az állapot (`error` / `reauth_required`) és az üzenet megjelenik az irányítópulton. Párhuzamos szinkronok egy zárral kizárva (a refresh token forgatása miatt).
 
 ## Tesztek

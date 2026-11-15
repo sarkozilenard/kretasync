@@ -113,6 +113,9 @@ describe('naptár és szinkron', () => {
     expect(c.refresh_token_enc).not.toContain('refresh-');
     expect(c.refresh_token_enc.split('.')).toHaveLength(3);
     expect(c.refresh_token_enc).not.toBe('refresh-1');
+    const reconnected = await call('POST', '/api/kreta/connect', { username: 'diak', password: 'masik-jelszo-123', instituteCode: 'klik011111111' }, a.cookie);
+    expect(reconnected.status).toBe(200);
+    expect(kreta.loginCalls).toHaveLength(1);
   });
 
   it('8. az ICS érvényes szerkezetű, Europe/Budapest időzónával', async () => {
