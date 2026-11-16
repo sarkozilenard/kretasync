@@ -45,7 +45,7 @@ function renderNav() {
        h('button', { class: 'btn small', onclick: logout }, 'Kijelentkezés')]
     : [h('a', { class: 'btn ghost small', href: '#/login' }, 'Bejelentkezés'), h('a', { class: 'btn primary small', href: '#/register' }, 'Regisztráció')]));
 }
-async function logout() { try { await api('POST', '/api/logout', {}); } catch { /* mindegy */ } sessionStorage.removeItem('calUrl'); state.me = null; location.hash = '#/'; route(); }
+async function logout() { try { await api('POST', '/api/logout', {}); } catch { /* mindegy */ } sessionStorage.removeItem('calUrl'); sessionStorage.removeItem('relayToken'); state.me = null; location.hash = '#/'; route(); }
 
 /* ---------- nézetek ---------- */
 function landing() {
@@ -156,8 +156,11 @@ async function dashboardView() {
     kc.append(h('div', { class: 'row' }, sync, dis));
     if (k.status === 'reauth_required') kc.append(h('p', { class: 'small muted' }, 'Add meg újra a KRÉTA-adataidat alább a kapcsolat megújításához.'), connectForm());
   } else {
-    kc.append(h('span', { class: 'badge off' }, 'Nincs beállítva'), h('p', { class: 'muted small' }, 'Add meg a KRÉTA-adataidat. A jelszavadat csak a belépéshez használjuk, nem tároljuk; a megőrzött hozzáférési tokent titkosítjuk.'), connectForm());
+    kc.append(h('span', { class: 'badge off' }, 'Nincs közvetlen kapcsolat'),
+      h('p', { class: 'muted small' }, 'A KRÉTA a szerverről általában nem érhető el; használd a fenti relay módot. Ha mégis eléri a szerver, itt közvetlenül is csatlakozhatsz (a jelszót nem tároljuk, a tokent titkosítjuk).'),
+      h('details', {}, h('summary', { class: 'small', style: 'cursor:pointer;color:var(--accent-2)' }, 'Közvetlen csatlakozás megnyitása'), connectForm()));
   }
+  grid.append(relayCard(d.relay));
   grid.append(kc);
 
   /* Naptár-kártya */
@@ -191,6 +194,54 @@ async function dashboardView() {
   grid.append(lc);
   root.append(grid);
   return root;
+}
+
+function copyBtn(text, label = 'Másolás') {
+  const b = h('button', { class: 'btn small', type: 'button' }, label);
+  b.addEventListener('click', async () => { try { await navigator.clipboard.writeText(text); } catch { /* régi böngésző */ } toast('A vágólapon.'); });
+  return b;
+}
+
+function relayCard(rl) {
+  const card = h('section', { class: 'card wide' }, h('h2', {}, 'KRÉTA-szinkron relay módban'));
+  card.append(h('p', { class: 'muted small' }, 'A KRÉTA nem engedi el a külföldi szervereket, ezért a lekérdezést a saját (magyar IP-jű) gépeden futó kis script végzi, és csak a kész órarendet tölti fel ide. A KRÉTA-jelszavad így sosem hagyja el a gépedet.'));
+  const token = sessionStorage.getItem('relayToken');
+  if (rl.enabled) {
+    card.append(h('span', { class: `badge ${rl.lastPushAt ? 'ok' : 'warn'}` }, rl.lastPushAt ? 'Aktív' : 'Várja az első feltöltést'),
+      h('dl', { class: 'kv' }, h('dt', {}, 'Utolsó feltöltés'), h('dd', {}, fmtDT(rl.lastPushAt)), h('dt', {}, 'Feltöltött órák'), h('dd', {}, rl.lastLessons ?? '—')));
+  }
+  if (token) {
+    const url = location.origin;
+    const envText = `KRETASYNC_URL=${url}\nKRETASYNC_TOKEN=${token}\nKRETA_USER=a_kreta_felhasznalonev\nKRETA_PASS=a_kreta_jelszo\nKRETA_KLIK=klik012345678\nSYNC_DAYS=14\n`;
+    card.append(h('div', { class: 'alert ok', style: 'margin-top:14px' }, 'A relay-token csak most látható. Mentsd el a relay.env fájlba (lásd lent).'),
+      h('ol', { class: 'small', style: 'padding-left:20px;display:grid;gap:8px' },
+        h('li', {}, 'Töltsd le a fájlokat, és tedd őket a kreta.py mellé egy mappába: ',
+          h('a', { href: '/relay/kreta_relay.py', download: 'kreta_relay.py' }, 'kreta_relay.py'), ', ', h('a', { href: '/relay/run_relay.sh', download: 'run_relay.sh' }, 'run_relay.sh'), '.'),
+        h('li', {}, 'Telepítsd a függőségeket: ', h('code', {}, 'pip install requests beautifulsoup4'), ' és add meg a futtatási jogot: ', h('code', {}, 'chmod +x run_relay.sh'), '.'),
+        h('li', {}, 'Hozz létre ugyanott egy ', h('code', {}, 'relay.env'), ' fájlt ezzel a tartalommal (töltsd ki a KRÉTA-adataidat), majd ', h('code', {}, 'chmod 600 relay.env'), ':'),
+        h('li', {}, 'Próbáld ki: ', h('code', {}, './run_relay.sh'), ' – ennek ki kell írnia: „Kész: N óra feltöltve”.'),
+        h('li', {}, 'Időzítsd óránként (', h('code', {}, 'crontab -e'), '): ', h('code', {}, '0 * * * * /teljes/utvonal/run_relay.sh >> /teljes/utvonal/relay.log 2>&1'))),
+      h('pre', { style: 'background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:12px;overflow:auto;font-size:.8rem;margin:10px 0' }, envText),
+      h('div', { class: 'row' }, copyBtn(envText, 'relay.env tartalmának másolása')));
+  }
+  const gen = h('button', { class: 'btn primary', style: 'margin-top:14px' }, rl.enabled ? 'Új relay-token generálása' : 'Relay beállítása');
+  gen.addEventListener('click', busy(gen, async () => {
+    if (rl.enabled && !confirm('Az új token után a régi azonnal érvénytelen lesz, és a relay.env-ben cserélned kell. Folytatod?')) return;
+    try { const r = await api('POST', '/api/relay/token', {}); sessionStorage.setItem('relayToken', r.token); } catch (e) { toast(e.message); }
+    route();
+  }));
+  const row = h('div', { class: 'row' }, gen);
+  if (rl.enabled) {
+    const off = h('button', { class: 'btn danger', style: 'margin-top:14px' }, 'Relay kikapcsolása');
+    off.addEventListener('click', busy(off, async () => {
+      if (!confirm('Kikapcsolod a relay-t? A feltöltött órák megmaradnak, de a frissítés leáll.')) return;
+      try { await api('DELETE', '/api/relay/token'); sessionStorage.removeItem('relayToken'); } catch (e) { toast(e.message); }
+      route();
+    }));
+    row.append(off);
+  }
+  card.append(row);
+  return card;
 }
 
 function connectForm() {

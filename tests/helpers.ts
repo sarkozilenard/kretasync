@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createApp } from '../src/app';
 import { closeDb, db } from '../src/db';
@@ -8,7 +8,8 @@ import { addDays, budapestDate } from '../src/time';
 export async function resetDb() {
   const sql = db();
   await sql.unsafe('drop schema public cascade; create schema public;');
-  await sql.unsafe(readFileSync(join(__dirname, '..', 'migrations', '001_init.sql'), 'utf8'));
+  const dir = join(__dirname, '..', 'migrations');
+  for (const f of readdirSync(dir).filter((x) => x.endsWith('.sql')).sort()) await sql.unsafe(readFileSync(join(dir, f), 'utf8'));
 }
 export { closeDb, db };
 

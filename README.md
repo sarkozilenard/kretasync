@@ -11,6 +11,17 @@ A diákok KRÉTA-órarendjét automatikusan szinkronizálja személyes, titkos I
 4. **A naptárlink csak létrehozáskor látható**, mert az adatbázisban csak a hash-e van (specifikáció). Elvesztése esetén újat kell generálni.
 5. **Vercel Hobby csomagon a cron naponta egyszer futhat.** A `vercel.json` ezért `0 5 * * *`. Gyakoribb futáshoz Pro csomag kell (a `SYNC_INTERVAL_HOURS` és a cron-ütemezés együtt szabályozza a gyakoriságot). A felhasználó bármikor kézzel is szinkronizálhat.
 
+
+## Relay mód (ajánlott, mert a KRÉTA a Vercel szervereit nem engedi el)
+
+A KRÉTA a külföldi/adatközponti IP-ket eldobja (a Vercel `fra1` régióból is `UND_ERR_CONNECT_TIMEOUT`). Ezért a lekérdezést a felhasználó saját, magyar IP-jű gépén futó script végzi (`relay/kreta_relay.py`, a `kreta.py` belépésével), és a nyers órarendet a `POST /api/relay/push` végpontra tölti fel; az átalakítás, az upsert és a törlések szerveroldalon, ugyanazzal a logikával történnek.
+
+1. Az irányítópulton: *KRÉTA-szinkron relay módban → Relay beállítása* (a token csak egyszer látható, a szerveren csak a hash-e van).
+2. A `relay/` fájljait (`kreta_relay.py`, `run_relay.sh`, `relay.env.example`) tedd a `kreta.py` mellé; `pip install requests beautifulsoup4`.
+3. `relay.env` (`chmod 600`) kitöltése, majd `./run_relay.sh`; időzítés: `0 * * * * /út/run_relay.sh >> /út/relay.log 2>&1`.
+
+Megjegyzés: a script csak akkor frissít, ha a gép be van kapcsolva; folyamatos működéshez Raspberry Pi vagy magyar IP-jű VPS ajánlott. Biztonság: a relay-token csak az adott felhasználó órarendjét írhatja, csak a közelmúlt (−7 nap) és a következő 60 nap módosítható, és az ablakban nem szereplő régi órák nem törölhetők.
+
 ## Helyi indítás
 
 ```bash

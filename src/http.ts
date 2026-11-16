@@ -29,9 +29,9 @@ export function clientIp(req: Request) {
   return (req.headers.get('x-real-ip') || req.headers.get('x-forwarded-for')?.split(',')[0] || 'unknown').trim();
 }
 
-export async function readJson(req: Request): Promise<Record<string, unknown>> {
+export async function readJson(req: Request, maxChars = 20_000): Promise<Record<string, unknown>> {
   const text = await req.text();
-  if (text.length > 20_000) throw new HttpError(413, 'Túl nagy kérés.');
+  if (text.length > maxChars) throw new HttpError(413, 'Túl nagy kérés.');
   try {
     const v = JSON.parse(text || '{}');
     if (v && typeof v === 'object' && !Array.isArray(v)) return v as Record<string, unknown>;

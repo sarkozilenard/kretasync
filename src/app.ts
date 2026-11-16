@@ -7,9 +7,9 @@ import { email as vEmail, newPassword, str } from './validate';
 import { env } from './env';
 import { sendEmail } from './email';
 import { buildIcs } from './ics';
-import { assertInstituteCode, createKretaClient, KretaApi, KretaAuthError, KretaError, pingIdp } from './kreta/client';
-import { syncDue, syncUser } from './sync';
-import { budapestLocal } from './time';
+import { assertInstituteCode, createKretaClient, KretaApi, KretaAuthError, KretaError, convertLessons, pingIdp } from './kreta/client';
+import { applyLessons, syncDue, syncUser } from './sync';
+import { addDays, budapestDate, budapestLocal } from './time';
 
 const SESSION_DAYS = 30;
 const SESSION_SEC = SESSION_DAYS * 86400;
@@ -112,6 +112,7 @@ const routes: Record<string, Handler> = {
     const u = await requireUser(sql, req);
     const [conn] = await sql`select institute_code, connection_status, last_sync_at, last_error from kreta_connections where user_id = ${u.id}`;
     const [cal] = await sql`select created_at, rotated_at from calendars where user_id = ${u.id}`;
+    const [relay] = await sql`select last_push_at, last_lessons from relay_tokens where user_id = ${u.id}`;
     const upcoming = await sql`
       select external_id, lesson_name, start_date, end_date, lesson_index, classroom_name, teacher_name, substitute_teacher_name
       from lessons where user_id = ${u.id} and end_date >= ${budapestLocal()} order by start_date limit 10`;
@@ -124,6 +125,7 @@ const routes: Record<string, Handler> = {
             nextSyncAt: conn.connection_status === 'reauth_required' ? null : next }
         : { connected: false },
       calendar: { exists: !!cal, rotatedAt: cal?.rotated_at ?? null },
+      relay: relay ? { enabled: true, lastPushAt: relay.last_push_at, lastLessons: relay.last_lessons } : { enabled: false },
       upcoming,
     });
   },
@@ -253,6 +255,49 @@ const routes: Record<string, Handler> = {
     await sql`delete from kreta_connections where user_id = ${u.id}`;
     await sql`delete from lessons where user_id = ${u.id}`;
     return json({ ok: true });
+  },
+
+  'POST /api/relay/token': async (req, sql) => {
+    const u = await requireUser(sql, req);
+    await rateLimit(sql, `relay-token:${u.id}`, 10, 3600);
+    const token = randomToken(32);
+    await sql`insert into relay_tokens (user_id, token_hash) values (${u.id}, ${sha256(token)})
+              on conflict (user_id) do update set token_hash = excluded.token_hash, created_at = now(), last_push_at = null, last_lessons = null`;
+    return json({ token });
+  },
+
+  'DELETE /api/relay/token': async (req, sql) => {
+    const u = await requireUser(sql, req);
+    await sql`delete from relay_tokens where user_id = ${u.id}`;
+    return json({ ok: true });
+  },
+
+  /** A relay (a felhasználó saját gépén futó script) tölti fel a nyers KRÉTA-órarendet; a szerver ugyanazzal a logikával alakítja át. */
+  'POST /api/relay/push': async (req, sql) => {
+    await rateLimit(sql, `relay-ip:${clientIp(req)}`, 240, 3600);
+    const bearer = (req.headers.get('authorization') || '').replace(/^Bearer /, '').trim();
+    if (!/^[A-Za-z0-9_-]{20,100}$/.test(bearer)) throw new HttpError(401, 'Érvénytelen relay-token.');
+    const [rt] = await sql`select user_id from relay_tokens where token_hash = ${sha256(bearer)}`;
+    if (!rt) throw new HttpError(401, 'Érvénytelen relay-token.');
+    await rateLimit(sql, `relay:${rt.user_id}`, 60, 3600);
+
+    const b = await readJson(req, 1_500_000);
+    const from = str(b.from, 'from', 10), to = str(b.to, 'to', 10);
+    const today = budapestDate();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to) throw new HttpError(400, 'Érvénytelen időszak.');
+    // Csak a közelmúlt és a közeljövő módosítható: a régebbi órák nem törölhetők egy hibás kéréssel.
+    if (from < addDays(today, -7) || to > addDays(today, 60) || to > addDays(from, 62)) throw new HttpError(400, 'Az időszak a megengedett tartományon kívül esik.');
+    if (!Array.isArray(b.items) || b.items.length > 3000) throw new HttpError(400, 'Érvénytelen órarendi adatok.');
+
+    let lessons;
+    try { lessons = convertLessons(b.items, env.kretaTimesAreUtc); }
+    catch (e) { if (e instanceof KretaError) throw new HttpError(400, e.message); throw e; }
+    lessons = lessons.filter((l) => l.start_date.slice(0, 10) >= from && l.start_date.slice(0, 10) <= to);
+
+    await applyLessons(sql, rt.user_id, lessons, from, to);
+    await sql`update relay_tokens set last_push_at = now(), last_lessons = ${lessons.length} where user_id = ${rt.user_id}`;
+    await sql`insert into sync_logs (user_id, success, lessons_seen, message) values (${rt.user_id}, true, ${lessons.length}, 'relay')`;
+    return json({ ok: true, lessons: lessons.length });
   },
 
   'GET /api/kreta/ping': async (req, sql) => {
