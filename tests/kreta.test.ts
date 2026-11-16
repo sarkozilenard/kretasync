@@ -11,6 +11,7 @@ function fakeKretaFetch() {
     const headers = new Headers(init.headers);
     log.push(`${method} ${url.host}${url.pathname}`);
     if (url.host === 'idp.e-kreta.hu' && url.pathname === '/Account/Login' && method === 'GET') {
+      expect(headers.get('user-agent')).toContain('python-requests');
       const ret = new URL(url.searchParams.get('ReturnUrl')!, 'https://idp.e-kreta.hu');
       expect(ret.searchParams.get('client_id')).toBe('kreta-ellenorzo-student-mobile-ios');
       expect(ret.searchParams.get('code_challenge_method')).toBe('S256');
@@ -21,6 +22,7 @@ function fakeKretaFetch() {
     if (url.pathname === '/account/login' && method === 'POST') {
       const f = new URLSearchParams(init.body);
       expect(headers.get('cookie')).toContain('af=cookie1');
+      expect(headers.get('user-agent')).toContain('Chrome/131'); // a kreta.py-ban csak a login POST kap böngésző UA-t
       expect(f.get('__RequestVerificationToken')).toBe(rvt);
       expect(f.get('InstituteCode')).toBe('klik011111111'); expect(f.get('loginType')).toBe('InstituteLogin');
       if (f.get('UserName') === 'diak' && f.get('Password') === 'jo-jelszo') return new Response(null, { status: 302, headers: { location: '/connect/authorize/callback', 'set-cookie': 'idp=sess; path=/' } });

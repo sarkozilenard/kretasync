@@ -36,7 +36,10 @@ const CLIENT_ID = 'kreta-ellenorzo-student-mobile-ios';
 const REDIRECT_URI = 'https://mobil.e-kreta.hu/ellenorzo-student/prod/oauthredirect';
 const SCOPE = ['openid', 'email', 'offline_access', 'kreta-ellenorzo-webapi.public', 'kreta-eugyintezes-webapi.public',
   'kreta-fileservice-webapi.public', 'kreta-mobile-global-webapi.public', 'kreta-dkt-webapi.public', 'kreta-ier-webapi.public'].join(' ');
+// A kreta.py pontosan így küld kéréseket: csak a bejelentkezési POST kap böngésző User-Agentet,
+// a többi a Python `requests` alapértelmezett fejléceit használja.
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+const PY_HEADERS = { 'user-agent': 'python-requests/2.32.3', 'accept-encoding': 'gzip, deflate', accept: '*/*', connection: 'keep-alive' };
 
 type FetchFn = typeof fetch;
 
@@ -74,23 +77,24 @@ export function createKretaClient(fetchImpl: FetchFn = fetch): KretaApi {
         errorName: error instanceof Error ? error.name : 'UnknownError',
         causeCode,
       });
-      throw new KretaError('A KRÉTA jelenleg nem érhető el. Kérjük, próbáld újra később.'); // hálózati hiba/időtúllépés
+      // hálózati hiba/időtúllépés; a régió és a hibakód nem érzékeny adat, de megmutatja, hol akad el a kapcsolat
+      throw new KretaError(`A KRÉTA jelenleg nem érhető el (szerver: ${process.env.VERCEL_REGION || 'helyi'}, hiba: ${causeCode ?? (error instanceof Error ? error.name : 'ismeretlen')}).`);
     }
     init.jar?.store(res);
     return res;
   };
 
   const getFollow = async (url: string, jar: CookieJar) => {
-    let res = await req(url, { jar, headers: { 'user-agent': UA } });
+    let res = await req(url, { jar, headers: PY_HEADERS });
     for (let i = 0; i < 5 && res.status >= 300 && res.status < 400 && res.headers.get('location'); i++) {
-      res = await req(new URL(res.headers.get('location')!, url).toString(), { jar, headers: { 'user-agent': UA } });
+      res = await req(new URL(res.headers.get('location')!, url).toString(), { jar, headers: PY_HEADERS });
     }
     return res;
   };
 
   const tokenRequest = async (body: Record<string, string>): Promise<Tokens> => {
     const res = await req(`${IDP}/connect/token`, {
-      method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(body).toString(),
+      method: 'POST', headers: { ...PY_HEADERS, 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(body).toString(),
     });
     if (res.status === 400 || res.status === 401) throw new KretaAuthError('A KRÉTA elutasította a hozzáférést (lejárt vagy érvénytelen token).');
     if (!res.ok) throw new KretaError(`KRÉTA token-végpont hiba (${res.status}).`);
@@ -134,7 +138,7 @@ export function createKretaClient(fetchImpl: FetchFn = fetch): KretaApi {
       // Sikeres belépés → átirányítás; ha az űrlap 200-zal újra megjelenik, az adatok hibásak.
       if (post.status < 300 || post.status >= 400) throw new KretaAuthError('Hibás KRÉTA-felhasználónév, jelszó vagy intézménykód.');
 
-      const cb = await req(`${IDP}${callbackPath}`, { jar, headers: { 'user-agent': UA } });
+      const cb = await req(`${IDP}${callbackPath}`, { jar, headers: PY_HEADERS });
       const loc = cb.headers.get('location');
       const code = loc ? new URL(loc, IDP).searchParams.get('code') : null;
       if (!code) throw new KretaAuthError('A KRÉTA bejelentkezés nem adott engedélyezési kódot.');
@@ -145,7 +149,7 @@ export function createKretaClient(fetchImpl: FetchFn = fetch): KretaApi {
     async getLessons(accessToken, instituteCode, from, to, timesAreUtc = false) {
       assertInstituteCode(instituteCode);
       const url = `https://${instituteCode}.e-kreta.hu/ellenorzo/v3/Sajat/OrarendElemek?` + new URLSearchParams({ datumTol: from, datumIg: to });
-      const res = await req(url, { headers: { authorization: `Bearer ${accessToken}`, 'user-agent': UA } });
+      const res = await req(url, { headers: { ...PY_HEADERS, authorization: `Bearer ${accessToken}` } });
       if (res.status === 401 || res.status === 403) throw new KretaAuthError('A KRÉTA elutasította a hozzáférési tokent.');
       if (!res.ok) throw new KretaError(`Az órarend lekérése sikertelen (${res.status}).`);
       return convertLessons(await res.json(), timesAreUtc);
@@ -186,4 +190,17 @@ export function convertLessons(json: unknown, timesAreUtc = false): KretaLesson[
   }
   out.sort((a, b) => a.start_date.slice(0, 10).localeCompare(b.start_date.slice(0, 10)) || (a.lesson_index ?? 0) - (b.lesson_index ?? 0));
   return out;
+}
+
+/** Diagnosztika: eléri-e a szerver (ebből a régióból) a KRÉTA bejelentkezési oldalát? Nem küld adatot. */
+export async function pingIdp(fetchImpl: FetchFn = fetch) {
+  const t0 = Date.now();
+  const region = process.env.VERCEL_REGION || 'ismeretlen (helyi)';
+  try {
+    const res = await fetchImpl(`${IDP}/Account/Login`, { headers: PY_HEADERS, redirect: 'manual', signal: AbortSignal.timeout(15_000) });
+    return { region, reachable: true, status: res.status, ms: Date.now() - t0 };
+  } catch (error) {
+    const cause = error instanceof Error ? (error.cause as { code?: string } | undefined) : undefined;
+    return { region, reachable: false, errorCode: cause?.code ?? (error instanceof Error ? error.name : 'UnknownError'), ms: Date.now() - t0 };
+  }
 }

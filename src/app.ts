@@ -7,7 +7,7 @@ import { email as vEmail, newPassword, str } from './validate';
 import { env } from './env';
 import { sendEmail } from './email';
 import { buildIcs } from './ics';
-import { assertInstituteCode, createKretaClient, KretaApi, KretaAuthError, KretaError } from './kreta/client';
+import { assertInstituteCode, createKretaClient, KretaApi, KretaAuthError, KretaError, pingIdp } from './kreta/client';
 import { syncDue, syncUser } from './sync';
 import { budapestLocal } from './time';
 
@@ -253,6 +253,11 @@ const routes: Record<string, Handler> = {
     await sql`delete from kreta_connections where user_id = ${u.id}`;
     await sql`delete from lessons where user_id = ${u.id}`;
     return json({ ok: true });
+  },
+
+  'GET /api/kreta/ping': async (req, sql) => {
+    await requireUser(sql, req);
+    return json(await pingIdp());
   },
 
   'POST /api/sync': async (req, sql, deps) => {

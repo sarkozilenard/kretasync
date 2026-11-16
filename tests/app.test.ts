@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { client, closeDb, db, FakeKreta, icsPath, lesson, PW, register, resetDb } from './helpers';
 
 const kreta = new FakeKreta();
@@ -117,7 +117,8 @@ describe('naptár és szinkron', () => {
       const reconnected = await call('POST', '/api/kreta/connect', { username: 'diak', password: 'masik-jelszo-123', instituteCode: 'klik011111111' }, a.cookie);
       expect(reconnected.status).toBe(200);
     }
-    expect(kreta.loginCalls).toHaveLength(1);
+    // a hibás jelszós próba nem számít; a sikeres jelszavas belépés egyszer történt, a többi újrakapcsolódás a mentett tokent használta
+    expect(kreta.loginCalls.filter((c) => c.password !== 'rossz')).toHaveLength(1);
   });
 
   it('8. az ICS érvényes szerkezetű, Europe/Budapest időzónával', async () => {
@@ -176,6 +177,19 @@ describe('naptár és szinkron', () => {
     const fresh = await call('GET', icsPath(r.data.calendarUrl));
     expect(fresh.status).toBe(200); expect(fresh.text).toContain('BEGIN:VEVENT');
     expect((await call('GET', '/api/calendar-ics?token=hamis.ics')).status).toBe(404);
+  });
+
+  it('KRÉTA-elérhetőség diagnosztika: bejelentkezés kell, és a hálózati hiba kódját mutatja', async () => {
+    expect((await call('GET', '/api/kreta/ping')).status).toBe(401);
+    const real = globalThis.fetch;
+    vi.stubGlobal('fetch', async (u: any, o: any) => {
+      if (String(u).startsWith('https://idp.e-kreta.hu')) throw new TypeError('fetch failed', { cause: Object.assign(new Error('x'), { code: 'UND_ERR_CONNECT_TIMEOUT' }) });
+      return real(u, o);
+    });
+    try {
+      const r = await call('GET', '/api/kreta/ping', undefined, a.cookie);
+      expect(r.status).toBe(200); expect(r.data).toMatchObject({ reachable: false, errorCode: 'UND_ERR_CONNECT_TIMEOUT' });
+    } finally { vi.unstubAllGlobals(); }
   });
 
   it('lejárt KRÉTA-hozzáférés: állapot jelzi, a már mentett órák megmaradnak', async () => {
